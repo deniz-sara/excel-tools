@@ -103,6 +103,7 @@ mergeBtn.addEventListener('click', async () => {
         const workbook = XLSX.read(data, { type: 'array', dense: true });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
+        fixSheetRef(worksheet);
         
         let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
         json = cleanAoA(json);
@@ -197,6 +198,7 @@ splitBtn.addEventListener('click', async () => {
       const workbook = XLSX.read(data, { type: 'array', dense: true });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
+      fixSheetRef(worksheet);
       
       let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
       json = cleanAoA(json);
@@ -274,4 +276,30 @@ function cleanAoA(aoa) {
     }
     return row.slice(0, i + 1).map(cell => (cell === "" || cell === null) ? undefined : cell);
   }).filter(row => row.length > 0);
+}
+
+function fixSheetRef(worksheet) {
+  if (!worksheet) return;
+  if (worksheet['!data']) {
+    let maxRow = worksheet['!data'].length;
+    let maxCol = 0;
+    for (let r = 0; r < maxRow; r++) {
+      if (worksheet['!data'][r] && worksheet['!data'][r].length > maxCol) {
+        maxCol = worksheet['!data'][r].length;
+      }
+    }
+    if (maxRow > 0 && maxCol > 0) {
+      worksheet['!ref'] = `A1:${XLSX.utils.encode_col(maxCol - 1)}${maxRow}`;
+    }
+  } else {
+    let maxRow = 0;
+    let maxCol = 0;
+    for (const key in worksheet) {
+      if (key[0] === '!') continue;
+      const coord = XLSX.utils.decode_cell(key);
+      if (coord.r > maxRow) maxRow = coord.r;
+      if (coord.c > maxCol) maxCol = coord.c;
+    }
+    worksheet['!ref'] = `A1:${XLSX.utils.encode_col(maxCol)}${maxRow + 1}`;
+  }
 }
