@@ -104,7 +104,7 @@ mergeBtn.addEventListener('click', async () => {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
         
         if (json.length === 0) continue;
 
@@ -121,7 +121,7 @@ mergeBtn.addEventListener('click', async () => {
       const newWb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(newWb, newWs, "Birlesik");
       
-      XLSX.writeFile(newWb, "Birlestirilmis_Excel.xlsx", { compression: true });
+      XLSX.writeFile(newWb, "Birlestirilmis_Excel.xlsx", { compression: true, bookSST: true });
     } catch (err) {
       alert('Birleştirme sırasında hata oluştu: ' + err.message);
     } finally {
@@ -182,7 +182,7 @@ splitBtn.addEventListener('click', async () => {
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
       
-      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
       if(json.length <= 1) {
         alert('Seçilen dosyada bölünecek yeterli veri yok.');
         hideLoading();
@@ -204,7 +204,7 @@ splitBtn.addEventListener('click', async () => {
         const newWb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(newWb, newWs, "Parca");
         
-        const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'array', compression: true });
+        const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'array', compression: true, bookSST: true });
         const fileName = `Parca_${i + 1}.xlsx`;
         zip.file(fileName, wbout);
       }
