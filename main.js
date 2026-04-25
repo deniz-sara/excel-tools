@@ -104,7 +104,8 @@ mergeBtn.addEventListener('click', async () => {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+        json = cleanAoA(json);
         
         if (json.length === 0) continue;
 
@@ -182,7 +183,8 @@ splitBtn.addEventListener('click', async () => {
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
       
-      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+      let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+      json = cleanAoA(json);
       if(json.length <= 1) {
         alert('Seçilen dosyada bölünecek yeterli veri yok.');
         hideLoading();
@@ -243,4 +245,14 @@ function showLoading(text) {
 
 function hideLoading() {
   document.getElementById('loading-overlay').classList.remove('active');
+}
+
+function cleanAoA(aoa) {
+  return aoa.map(row => {
+    let i = row.length - 1;
+    while (i >= 0 && (row[i] === null || row[i] === undefined || row[i] === "")) {
+      i--;
+    }
+    return row.slice(0, i + 1);
+  }).filter(row => row.length > 0);
 }
