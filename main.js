@@ -101,18 +101,12 @@ mergeBtn.addEventListener('click', async () => {
       for (const file of mergeFiles) {
         const data = await readFileAsArrayBuffer(file);
         const workbook = XLSX.read(data, { type: 'array', dense: true });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
         
-        let bestJson = [];
-        for (const sheetName of workbook.SheetNames) {
-          const worksheet = workbook.Sheets[sheetName];
-          let sheetJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
-          sheetJson = cleanAoA(sheetJson);
-          if (sheetJson.length > bestJson.length) {
-            bestJson = sheetJson;
-          }
-        }
+        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+        json = cleanAoA(json);
         
-        const json = bestJson;
         if (json.length === 0) continue;
 
         if (isFirstFile) {
@@ -201,18 +195,11 @@ splitBtn.addEventListener('click', async () => {
     try {
       const data = await readFileAsArrayBuffer(splitFile);
       const workbook = XLSX.read(data, { type: 'array', dense: true });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
       
-      let bestJson = [];
-      for (const sheetName of workbook.SheetNames) {
-        const worksheet = workbook.Sheets[sheetName];
-        let sheetJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
-        sheetJson = cleanAoA(sheetJson);
-        if (sheetJson.length > bestJson.length) {
-          bestJson = sheetJson;
-        }
-      }
-      
-      const json = bestJson;
+      let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+      json = cleanAoA(json);
       if(json.length <= 1) {
         alert('Seçilen dosyada bölünecek yeterli veri yok.');
         hideLoading();
