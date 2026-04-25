@@ -122,7 +122,22 @@ mergeBtn.addEventListener('click', async () => {
       const newWb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(newWb, newWs, "Birlesik");
       
-      XLSX.writeFile(newWb, "Birlestirilmis_Excel.xlsx", { compression: true, bookSST: true });
+      const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'array', bookSST: true });
+      
+      // XLSX dosyasını JSZip ile açıp en yüksek seviye (Level 9) sıkıştırma ile tekrar paketliyoruz
+      const zip = await JSZip.loadAsync(wbout);
+      const compressedBlob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 }
+      });
+      
+      const url = URL.createObjectURL(compressedBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "Birlestirilmis_Excel.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       alert('Birleştirme sırasında hata oluştu: ' + err.message);
     } finally {
@@ -211,7 +226,11 @@ splitBtn.addEventListener('click', async () => {
         zip.file(fileName, wbout);
       }
 
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipBlob = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 }
+      });
       
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
