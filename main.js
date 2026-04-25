@@ -253,6 +253,6 @@ function cleanAoA(aoa) {
     while (i >= 0 && (row[i] === null || row[i] === undefined || row[i] === "")) {
       i--;
     }
-    return row.slice(0, i + 1);
+    return row.slice(0, i + 1).map(cell => (cell === "" || cell === null) ? undefined : cell);
   }).filter(row => row.length > 0);
 }
