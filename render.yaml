@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: excel-tools
+    name: denizsaraexcel
     env: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
