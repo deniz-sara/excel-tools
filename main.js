@@ -1,5 +1,5 @@
 import './style.css';
-import { createIcons, FileSpreadsheet, Combine, SplitSquareVertical, X } from 'lucide';
+import { createIcons, FileSpreadsheet, Combine, SplitSquareVertical, X, Download } from 'lucide';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 
@@ -9,7 +9,8 @@ createIcons({
     FileSpreadsheet,
     Combine,
     SplitSquareVertical,
-    X
+    X,
+    Download
   }
 });
 
@@ -37,10 +38,12 @@ const mergeUploadArea = document.getElementById('merge-upload-area');
 const mergeInput = document.getElementById('merge-files');
 const mergeFileList = document.getElementById('merge-file-list');
 const mergeBtn = document.getElementById('merge-btn');
+const mergeDownloadBtn = document.getElementById('merge-download-btn');
 
 mergeInput.addEventListener('change', (e) => {
   const newFiles = Array.from(e.target.files);
   mergeFiles = [...mergeFiles, ...newFiles];
+  mergeDownloadBtn.style.display = 'none'; // Hide download btn when new files selected
   updateMergeUI();
   e.target.value = ''; // Reset input
 });
@@ -65,6 +68,7 @@ function updateMergeUI() {
     btn.addEventListener('click', (e) => {
       const idx = parseInt(e.currentTarget.dataset.index);
       mergeFiles.splice(idx, 1);
+      mergeDownloadBtn.style.display = 'none'; // Hide download btn when files removed
       updateMergeUI();
     });
   });
@@ -86,6 +90,7 @@ mergeUploadArea.addEventListener('drop', (e) => {
     f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv')
   );
   mergeFiles = [...mergeFiles, ...newFiles];
+  mergeDownloadBtn.style.display = 'none'; // Hide download btn on drop
   updateMergeUI();
 });
 
@@ -132,11 +137,15 @@ mergeBtn.addEventListener('click', async () => {
       });
       
       const url = URL.createObjectURL(compressedBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = "Birlestirilmis_Excel.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
+      mergeDownloadBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "Birlestirilmis_Excel.xlsx";
+        a.click();
+      };
+      
+      mergeDownloadBtn.style.display = 'flex';
+      createIcons({ icons: { Download } });
     } catch (err) {
       alert('Birleştirme sırasında hata oluştu: ' + err.message);
     } finally {
@@ -151,6 +160,7 @@ const splitInput = document.getElementById('split-file');
 const splitFileInfo = document.getElementById('split-file-info');
 const splitRowsInput = document.getElementById('split-rows');
 const splitBtn = document.getElementById('split-btn');
+const splitDownloadBtn = document.getElementById('split-download-btn');
 
 splitInput.addEventListener('change', (e) => {
   if(e.target.files.length > 0) processSplitFile(e.target.files[0]);
@@ -179,6 +189,7 @@ function processSplitFile(file) {
   splitFileInfo.textContent = `Seçili Dosya: ${file.name}`;
   splitFileInfo.style.display = 'block';
   splitBtn.disabled = false;
+  splitDownloadBtn.style.display = 'none'; // Hide download btn when new file selected
 }
 
 splitBtn.addEventListener('click', async () => {
@@ -231,11 +242,15 @@ splitBtn.addEventListener('click', async () => {
       });
       
       const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Bolunmus_${splitFile.name}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      splitDownloadBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Bolunmus_${splitFile.name}.zip`;
+        a.click();
+      };
+      
+      splitDownloadBtn.style.display = 'flex';
+      createIcons({ icons: { Download } });
 
     } catch (err) {
       alert('Bölme sırasında hata oluştu: ' + err.message);
