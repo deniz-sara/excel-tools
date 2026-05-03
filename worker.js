@@ -56,118 +56,118 @@ async function handleMerge(files) {
     self.postMessage({ type: 'progress', message: `${i + 1}. dosya okunuyor...` });
     await yieldToEventLoop();
 
-    const data = await readFileAsArrayBuffer(files[i]);
-    const workbook = XLSX.read(data, { type: 'array' });
+    let data;
+    try {
+      data = await readFileAsArrayBuffer(files[i]);
+    } catch(e) { throw new Error('[FILE_READ] ' + e.message); }
+    
+    let workbook;
+    try {
+      workbook = XLSX.read(data, { type: 'array' });
+    } catch(e) { throw new Error('[XLSX_READ] ' + e.message); }
+    
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
     self.postMessage({ type: 'progress', message: `${i + 1}. dosya işleniyor...` });
     await yieldToEventLoop();
 
-    let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+    let json;
+    try {
+      json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+    } catch(e) { throw new Error('[SHEET_TO_JSON] ' + e.message); }
     
     if (json.length === 0) continue;
 
-    if (isFirstFile) {
-      // Chunk the concatenation to save memory
-      const chunkSize = 50000;
-      for (let j = 0; j < json.length; j += chunkSize) {
-        combinedData = combinedData.concat(json.slice(j, j + chunkSize));
-        await yieldToEventLoop();
+    try {
+      if (isFirstFile) {
+        const chunkSize = 50000;
+        for (let j = 0; j < json.length; j += chunkSize) {
+          combinedData = combinedData.concat(json.slice(j, j + chunkSize));
+          await yieldToEventLoop();
+        }
+        isFirstFile = false;
+      } else {
+        const sliced = json.slice(1);
+        const chunkSize = 50000;
+        for (let j = 0; j < sliced.length; j += chunkSize) {
+          combinedData = combinedData.concat(sliced.slice(j, j + chunkSize));
+          await yieldToEventLoop();
+        }
       }
-      isFirstFile = false;
-    } else {
-      // Skip header row
-      const sliced = json.slice(1);
-      const chunkSize = 50000;
-      for (let j = 0; j < sliced.length; j += chunkSize) {
-        combinedData = combinedData.concat(sliced.slice(j, j + chunkSize));
-        await yieldToEventLoop();
-      }
-    }
+    } catch(e) { throw new Error('[CONCAT] ' + e.message); }
     
-    // Clear variables to free memory early
     json = null;
+    workbook = null;
+    data = null;
     await yieldToEventLoop();
   }
 
   self.postMessage({ type: 'progress', message: 'Veriler XML formatına çevriliyor (Bu işlem biraz sürebilir)...' });
   await yieldToEventLoop();
 
-  // Bypassing XLSX.write completely to prevent ArrayBuffer allocation errors
-  let blobParts = [];
-  blobParts.push(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n<sheetData>\n`);
+  let sheetBlob;
+  try {
+    let blobParts = [];
+    blobParts.push(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n<sheetData>\n`);
 
-  let currentChunk = '';
-  for (let r = 0; r < combinedData.length; r++) {
-    let rowStr = `<row r="${r + 1}">`;
-    let row = combinedData[r];
-    for (let c = 0; c < row.length; c++) {
-      let val = row[c];
-      if (val !== undefined && val !== null && val !== '') {
-        let type = typeof val === 'number' ? 'n' : 'inlineStr';
-        let cellRef = numToCol(c) + (r + 1);
-        if (type === 'n') {
-          rowStr += `<c r="${cellRef}" t="n"><v>${val}</v></c>`;
-        } else {
-          rowStr += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(val)}</t></is></c>`;
+    let currentChunk = '';
+    for (let r = 0; r < combinedData.length; r++) {
+      let rowStr = `<row r="${r + 1}">`;
+      let row = combinedData[r];
+      for (let c = 0; c < row.length; c++) {
+        let val = row[c];
+        if (val !== undefined && val !== null && val !== '') {
+          let type = typeof val === 'number' ? 'n' : 'inlineStr';
+          let cellRef = numToCol(c) + (r + 1);
+          if (type === 'n') {
+            rowStr += `<c r="${cellRef}" t="n"><v>${val}</v></c>`;
+          } else {
+            rowStr += `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(val)}</t></is></c>`;
+          }
         }
       }
+      rowStr += `</row>\n`;
+      currentChunk += rowStr;
+      
+      if (r % 10000 === 0) {
+        blobParts.push(currentChunk);
+        currentChunk = '';
+        self.postMessage({ type: 'progress', message: `XML Oluşturuluyor: %${Math.round((r / combinedData.length) * 100)}` });
+        await yieldToEventLoop();
+      }
     }
-    rowStr += `</row>\n`;
-    currentChunk += rowStr;
     
-    if (r % 10000 === 0) {
-      blobParts.push(currentChunk);
-      currentChunk = '';
-      self.postMessage({ type: 'progress', message: `XML Oluşturuluyor: %${Math.round((r / combinedData.length) * 100)}` });
-      await yieldToEventLoop();
-    }
-  }
+    if (currentChunk) blobParts.push(currentChunk);
+    blobParts.push(`</sheetData>\n</worksheet>`);
+    
+    sheetBlob = new Blob(blobParts, { type: 'application/xml' });
+    blobParts = null;
+  } catch(e) { throw new Error('[XML_GEN] ' + e.message); }
   
-  if (currentChunk) blobParts.push(currentChunk);
-  blobParts.push(`</sheetData>\n</worksheet>`);
-  
-  let sheetBlob = new Blob(blobParts, { type: 'application/xml' });
   combinedData = null; // Free memory
-  blobParts = null;
   await yieldToEventLoop();
 
   self.postMessage({ type: 'progress', message: 'Maksimum seviyede sıkıştırılıyor (Level 9)...' });
   await yieldToEventLoop();
 
-  const zip = new JSZip();
+  let compressedBlob;
+  try {
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n  <Default Extension="xml" ContentType="application/xml"/>\n  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\n  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n</Types>`);
+    zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\n</Relationships>`);
+    zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\n  <sheets><sheet name="Birlesik" sheetId="1" r:id="rId1"/></sheets>\n</workbook>`);
+    zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\n</Relationships>`);
+    zip.file('xl/worksheets/sheet1.xml', sheetBlob);
+
+    compressedBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 }
+    });
+  } catch(e) { throw new Error('[ZIP_GEN] ' + e.message); }
   
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`);
-
-  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`);
-
-  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="Birlesik" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`);
-
-  zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`);
-
-  zip.file('xl/worksheets/sheet1.xml', sheetBlob);
-
-  const compressedBlob = await zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 9 }
-  });
+  self.postMessage({ type: 'done', blob: compressedBlob });
   
   self.postMessage({ type: 'done', blob: compressedBlob });
 }
