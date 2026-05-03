@@ -1,7 +1,8 @@
 import './style.css';
 import { createIcons, FileSpreadsheet, Combine, SplitSquareVertical, X, Download } from 'lucide';
-import * as XLSX from 'xlsx';
-import JSZip from 'jszip';
+
+// Initialize Web Worker
+const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
 
 // Initialize Lucide icons
 createIcons({
@@ -94,49 +95,20 @@ mergeUploadArea.addEventListener('drop', (e) => {
   updateMergeUI();
 });
 
-mergeBtn.addEventListener('click', async () => {
-  showLoading('Oluşturuluyor, lütfen bekleyin...');
-  
-  // Use setTimeout to allow UI to update to show loading spinner before main thread blocks
-  setTimeout(async () => {
-    try {
-      let combinedData = [];
-      let isFirstFile = true;
+mergeBtn.addEventListener('click', () => {
+  showLoading('İşlem arka planda başlatılıyor...');
+  mergeDownloadBtn.style.display = 'none';
 
-      for (const file of mergeFiles) {
-        const data = await readFileAsArrayBuffer(file);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        
-        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
-        
-        if (json.length === 0) continue;
-
-        if (isFirstFile) {
-          combinedData = combinedData.concat(json);
-          isFirstFile = false;
-        } else {
-          // Skip header row
-          combinedData = combinedData.concat(json.slice(1));
-        }
-      }
-
-      const newWs = XLSX.utils.aoa_to_sheet(combinedData);
-      const newWb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(newWb, newWs, "Birlesik");
+  // Listen to worker messages for this operation
+  const onMessage = (e) => {
+    const { type, message, blob } = e.data;
+    if (type === 'progress') {
+      showLoading(message);
+    } else if (type === 'done') {
+      worker.removeEventListener('message', onMessage);
+      hideLoading();
       
-      const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'array', bookSST: true });
-      
-      // XLSX dosyasını JSZip ile açıp en yüksek seviye (Level 9) sıkıştırma ile tekrar paketliyoruz
-      const zip = await JSZip.loadAsync(wbout);
-      const compressedBlob = await zip.generateAsync({
-        type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 9 }
-      });
-      
-      const url = URL.createObjectURL(compressedBlob);
+      const url = URL.createObjectURL(blob);
       mergeDownloadBtn.onclick = () => {
         const a = document.createElement('a');
         a.href = url;
@@ -146,12 +118,15 @@ mergeBtn.addEventListener('click', async () => {
       
       mergeDownloadBtn.style.display = 'flex';
       createIcons({ icons: { Download } });
-    } catch (err) {
-      alert('Birleştirme sırasında hata oluştu: ' + err.message);
-    } finally {
+    } else if (type === 'error') {
+      worker.removeEventListener('message', onMessage);
       hideLoading();
+      alert('Birleştirme sırasında hata oluştu: ' + message);
     }
-  }, 100);
+  };
+
+  worker.addEventListener('message', onMessage);
+  worker.postMessage({ type: 'merge', data: { files: mergeFiles } });
 });
 
 // --- SPLIT LOGIC ---
@@ -192,56 +167,25 @@ function processSplitFile(file) {
   splitDownloadBtn.style.display = 'none'; // Hide download btn when new file selected
 }
 
-splitBtn.addEventListener('click', async () => {
+splitBtn.addEventListener('click', () => {
   const rowLimit = parseInt(splitRowsInput.value);
   if (!rowLimit || rowLimit < 1) {
     alert('Lütfen geçerli bir satır sayısı girin.');
     return;
   }
 
-  showLoading('Dosya bölünüyor ve ZIP oluşturuluyor...');
+  showLoading('İşlem arka planda başlatılıyor...');
+  splitDownloadBtn.style.display = 'none';
   
-  setTimeout(async () => {
-    try {
-      const data = await readFileAsArrayBuffer(splitFile);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
+  const onMessage = (e) => {
+    const { type, message, blob } = e.data;
+    if (type === 'progress') {
+      showLoading(message);
+    } else if (type === 'done') {
+      worker.removeEventListener('message', onMessage);
+      hideLoading();
       
-      let json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
-      if(json.length <= 1) {
-        alert('Seçilen dosyada bölünecek yeterli veri yok.');
-        hideLoading();
-        return;
-      }
-
-      const header = json[0];
-      const rows = json.slice(1);
-      
-      const numFiles = Math.ceil(rows.length / rowLimit);
-
-      const zip = new JSZip();
-
-      for (let i = 0; i < numFiles; i++) {
-        const chunk = rows.slice(i * rowLimit, (i + 1) * rowLimit);
-        const chunkWithHeader = [header, ...chunk];
-        
-        const newWs = XLSX.utils.aoa_to_sheet(chunkWithHeader);
-        const newWb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(newWb, newWs, "Parca");
-        
-        const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'array', compression: true, bookSST: true });
-        const fileName = `Parca_${i + 1}.xlsx`;
-        zip.file(fileName, wbout);
-      }
-
-      const zipBlob = await zip.generateAsync({ 
-        type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 9 }
-      });
-      
-      const url = URL.createObjectURL(zipBlob);
+      const url = URL.createObjectURL(blob);
       splitDownloadBtn.onclick = () => {
         const a = document.createElement('a');
         a.href = url;
@@ -251,24 +195,18 @@ splitBtn.addEventListener('click', async () => {
       
       splitDownloadBtn.style.display = 'flex';
       createIcons({ icons: { Download } });
-
-    } catch (err) {
-      alert('Bölme sırasında hata oluştu: ' + err.message);
-    } finally {
+    } else if (type === 'error') {
+      worker.removeEventListener('message', onMessage);
       hideLoading();
+      alert('Bölme sırasında hata oluştu: ' + message);
     }
-  }, 100);
+  };
+
+  worker.addEventListener('message', onMessage);
+  worker.postMessage({ type: 'split', data: { file: splitFile, rowLimit } });
 });
 
-// --- HELPERS ---
-function readFileAsArrayBuffer(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = (e) => reject(new Error('Dosya okunamadı.'));
-    reader.readAsArrayBuffer(file);
-  });
-}
+
 
 function showLoading(text) {
   document.getElementById('loading-text').textContent = text;
